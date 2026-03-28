@@ -66,10 +66,16 @@ export default function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/check-auth', { credentials: 'include' });
+        const token = localStorage.getItem('ssa_token');
+        if (!token) { setIsCheckingAuth(false); return; }
+        const res = await fetch('/api/check-auth', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await res.json();
         if (data.authenticated) {
           setIsDashboardUnlocked(true);
+        } else {
+          localStorage.removeItem('ssa_token');
         }
       } catch (err) {
         console.error('Auth check failed:', err);
@@ -84,12 +90,12 @@ export default function App() {
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: passwordInput })
       });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.token) {
+        localStorage.setItem('ssa_token', data.token);
         setIsDashboardUnlocked(true);
         setPasswordError(false);
       } else {
@@ -103,7 +109,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+      localStorage.removeItem('ssa_token');
       setIsDashboardUnlocked(false);
       setPasswordInput('');
     } catch (err) {
@@ -233,7 +239,10 @@ export default function App() {
     try {
       const res = await fetch('/api/inventory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ssa_token') || ''}`
+        },
         body: JSON.stringify(itemToSave)
       });
       const savedItem = await res.json();
@@ -269,7 +278,10 @@ export default function App() {
 
   const deleteInventoryItem = async (id: string) => {
     try {
-      const res = await fetch(`/api/inventory/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/inventory/${id}`, { 
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('ssa_token') || ''}` }
+      });
       if (res.ok) {
         setInventory(prev => prev.filter(item => item.id !== id));
         if (editingInventoryItem?.id === id) {
@@ -286,7 +298,10 @@ export default function App() {
 
   const deleteInvoice = async (id: string) => {
     try {
-      const res = await fetch(`/api/history/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/history/${id}`, { 
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('ssa_token') || ''}` }
+      });
       if (res.ok) {
         setHistory(prev => prev.filter(inv => inv.id !== id));
       } else {
