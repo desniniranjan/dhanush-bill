@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import { createServer as createViteServer } from 'vite';
 import jwt from 'jsonwebtoken';
-import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
@@ -35,11 +34,11 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
-  app.use(cookieParser());
 
-  // Auth Middleware
+  // Auth Middleware — reads Bearer token from Authorization header
   const authenticate = (req: Request, res: Response, next: NextFunction) => {
-    const token = req.cookies.ssa_token;
+    const auth = req.headers['authorization'];
+    const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
       jwt.verify(token, JWT_SECRET);
@@ -55,27 +54,16 @@ async function startServer() {
 
     if (password === ADMIN_PASSWORD) {
       const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
-      
-      res.cookie('ssa_token', token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'none',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-      });
-
-      return res.json({ success: true });
+      return res.json({ success: true, token });
     }
 
     return res.status(401).json({ success: false, message: 'Invalid password' });
   });
 
   app.get('/api/check-auth', (req, res) => {
-    const token = req.cookies.ssa_token;
-
-    if (!token) {
-      return res.json({ authenticated: false });
-    }
-
+    const auth = req.headers['authorization'];
+    const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!token) return res.json({ authenticated: false });
     try {
       jwt.verify(token, JWT_SECRET);
       return res.json({ authenticated: true });
@@ -85,11 +73,7 @@ async function startServer() {
   });
 
   app.post('/api/logout', (req, res) => {
-    res.clearCookie('ssa_token', {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none'
-    });
+    // Stateless — client just drops the token
     res.json({ success: true });
   });
 
