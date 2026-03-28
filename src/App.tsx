@@ -23,13 +23,6 @@ import {
   History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = 'https://pktpvyllcuikbldcwjco.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrdHB2eWxsY3Vpa2JsZGN3amNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3MDk0NDMsImV4cCI6MjA5MDI4NTQ0M30.r_MxvaALqpCza6ryPwGhDHmTAU_dIV6cMDUhNWzgKTA';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-const ADMIN_PASSWORD = 'Dhanush9559';
 
 interface BillingItem {
   id: string;
@@ -71,26 +64,50 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    // Check localStorage for existing session
-    const stored = localStorage.getItem('ssa_unlocked');
-    if (stored === 'true') setIsDashboardUnlocked(true);
-    setIsCheckingAuth(false);
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/check-auth');
+        const data = await res.json();
+        if (data.authenticated) {
+          setIsDashboardUnlocked(true);
+        }
+      } catch (err) {
+        console.error('Auth check failed:', err);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+    checkAuth();
   }, []);
 
-  const handleLogin = () => {
-    if (passwordInput === ADMIN_PASSWORD) {
-      localStorage.setItem('ssa_unlocked', 'true');
-      setIsDashboardUnlocked(true);
-      setPasswordError(false);
-    } else {
+  const handleLogin = async () => {
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsDashboardUnlocked(true);
+        setPasswordError(false);
+      } else {
+        setPasswordError(true);
+      }
+    } catch (err) {
+      console.error('Login failed:', err);
       setPasswordError(true);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('ssa_unlocked');
-    setIsDashboardUnlocked(false);
-    setPasswordInput('');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+      setIsDashboardUnlocked(false);
+      setPasswordInput('');
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
   };
   
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -103,12 +120,24 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [{ data: invData }, { data: histData }] = await Promise.all([
-        supabase.from('inventory').select('*'),
-        supabase.from('history').select('*').order('date', { ascending: false })
+      const [invRes, histRes] = await Promise.all([
+        fetch('/api/inventory'),
+        fetch('/api/history')
       ]);
-      if (Array.isArray(invData)) setInventory(invData);
-      if (Array.isArray(histData)) setHistory(histData);
+      
+      if (invRes.ok) {
+        const invData = await invRes.json();
+        if (Array.isArray(invData)) {
+          setInventory(invData);
+        }
+      }
+      
+      if (histRes.ok) {
+        const histData = await histRes.json();
+        if (Array.isArray(histData)) {
+          setHistory(histData);
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch data:', err);
     }
@@ -172,9 +201,13 @@ export default function App() {
 
   const saveInvoice = async (invoice: Invoice) => {
     try {
-      const { data, error } = await supabase.from('history').insert(invoice).select();
-      if (error) throw error;
-      setHistory(prev => [data[0], ...prev]);
+      const res = await fetch('/api/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(invoice)
+      });
+      const savedInvoice = await res.json();
+      setHistory(prev => [savedInvoice, ...prev]);
       setItems([]);
       setCustomerName('');
       setPhoneNumber('');
@@ -197,9 +230,12 @@ export default function App() {
     };
 
     try {
-      const { data, error } = await supabase.from('inventory').upsert(itemToSave).select();
-      if (error) throw error;
-      const savedItem = data[0];
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(itemToSave)
+      });
+      const savedItem = await res.json();
 
       if (editingInventoryItem) {
         setInventory(prev => prev.map(item => 
@@ -214,7 +250,7 @@ export default function App() {
       setNewInvPrice('');
     } catch (err) {
       console.error('Failed to save inventory item:', err);
-      alert('Failed to save inventory item.');
+      alert('Failed to save inventory item. Are you logged in?');
     }
   };
 
@@ -232,52 +268,88 @@ export default function App() {
 
   const deleteInventoryItem = async (id: string) => {
     try {
-      const { error } = await supabase.from('inventory').delete().eq('id', id);
-      if (error) throw error;
-      setInventory(prev => prev.filter(item => item.id !== id));
-      if (editingInventoryItem?.id === id) cancelEditingInventory();
+      const res = await fetch(`/api/inventory/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setInventory(prev => prev.filter(item => item.id !== id));
+        if (editingInventoryItem?.id === id) {
+          cancelEditingInventory();
+        }
+      } else {
+        throw new Error('Failed to delete');
+      }
     } catch (err) {
       console.error('Failed to delete inventory item:', err);
-      alert('Failed to delete inventory item.');
+      alert('Failed to delete inventory item. Are you logged in?');
     }
   };
 
   const deleteInvoice = async (id: string) => {
     try {
-      const { error } = await supabase.from('history').delete().eq('id', id);
-      if (error) throw error;
-      setHistory(prev => prev.filter(inv => inv.id !== id));
+      const res = await fetch(`/api/history/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setHistory(prev => prev.filter(inv => inv.id !== id));
+      } else {
+        throw new Error('Failed to delete');
+      }
     } catch (err) {
       console.error('Failed to delete invoice:', err);
-      alert('Failed to delete invoice.');
+      alert('Failed to delete invoice. Are you logged in?');
     }
   };
 
   const generateWhatsAppMessage = (invoice: Invoice) => {
-    const header    = "Item               Qty   Price(₹)   Total(₹)";
-    const separator = "--------------------------------------------";
-    
-    const tableRows = invoice.items.map(item => {
-      const name = item.name.length > 18 ? item.name.slice(0, 15) + "..." : item.name.padEnd(18);
-      const qty = item.quantity.toString().padStart(4);
-      const price = item.price.toFixed(0).padStart(10);
-      const total = (item.price * item.quantity).toFixed(0).padStart(10);
-      return `${name} ${qty} ${price} ${total}`;
-    }).join('\n');
+    const W = 46; // total inner width of the receipt
 
-    return `*SAI SRINIVAS AGENCIES - BILLING RECEIPT*\n\n` +
-      `*Invoice ID:* ${invoice.id}\n` +
-      `*Date:* ${invoice.date}\n` +
-      `*Customer:* ${invoice.customerName}\n\n` +
-      `*Items:*\n` +
+    const center = (text: string) => {
+      const pad = Math.max(0, W - text.length);
+      const left = Math.floor(pad / 2);
+      const right = pad - left;
+      return ' '.repeat(left) + text + ' '.repeat(right);
+    };
+
+    const col1 = 18;
+    const col2 = 4;
+    const col3 = 8;
+    const col4 = 9;
+
+    const divider   = `+${'-'.repeat(col1+2)}+${'-'.repeat(col2+2)}+${'-'.repeat(col3+2)}+${'-'.repeat(col4+2)}+`;
+    const topBottom = `${'='.repeat(W + 2)}`;
+
+    const header = `| ${'Item'.padEnd(col1)} | ${'Qty'.padStart(col2)} | ${'Price'.padStart(col3)} | ${'Total'.padStart(col4)} |`;
+
+    const tableRows = invoice.items.map(item => {
+      const name  = item.name.length > col1 ? item.name.slice(0, col1 - 2) + '..' : item.name.padEnd(col1);
+      const qty   = item.quantity.toString().padStart(col2);
+      const price = `₹${item.price.toFixed(0)}`.padStart(col3);
+      const total = `₹${(item.price * item.quantity).toFixed(0)}`.padStart(col4);
+      return `| ${name} | ${qty} | ${price} | ${total} |`;
+    }).join(`\n${divider}\n`);
+
+    // Split date and time from invoice.date (e.g. "3/29/2026, 04:30 PM")
+    const [datePart, timePart] = invoice.date.split(', ');
+
+    return (
       "```\n" +
+      `${topBottom}\n` +
+      `${center('SAI SRINIVAS AGENCIES')}\n` +
+      `${center('BILLING RECEIPT')}\n` +
+      `${topBottom}\n` +
+      `Invoice : ${invoice.id}\n` +
+      `Date    : ${datePart || invoice.date}\n` +
+      `Time    : ${timePart || ''}\n` +
+      `Customer: ${invoice.customerName}\n` +
+      `${'-'.repeat(W + 2)}\n` +
+      `${divider}\n` +
       `${header}\n` +
-      `${separator}\n` +
+      `${divider}\n` +
       `${tableRows}\n` +
-      `${separator}\n` +
-      "```\n\n" +
-      `*Grand Total: ₹${invoice.total.toLocaleString()}.00*\n\n` +
-      `Thank you for your business!`;
+      `${divider}\n` +
+      `${'-'.repeat(W + 2)}\n` +
+      `${center(`TOTAL: Rs.${invoice.total.toLocaleString()}.00`)}\n` +
+      `${topBottom}\n` +
+      `${center('Thank you for your business!')}\n` +
+      "```"
+    );
   };
 
   const sendWhatsAppBill = (invoice: Invoice) => {
