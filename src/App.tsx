@@ -66,7 +66,7 @@ export default function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/check-auth');
+        const res = await fetch('/api/check-auth', { credentials: 'include' });
         const data = await res.json();
         if (data.authenticated) {
           setIsDashboardUnlocked(true);
@@ -84,6 +84,7 @@ export default function App() {
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: passwordInput })
       });
@@ -102,7 +103,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/logout', { method: 'POST' });
+      await fetch('/api/logout', { method: 'POST', credentials: 'include' });
       setIsDashboardUnlocked(false);
       setPasswordInput('');
     } catch (err) {
