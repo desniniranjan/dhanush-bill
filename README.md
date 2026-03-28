@@ -1,20 +1,25 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Dhanush Bill Manager
 
-# Run and deploy your AI Studio app
+A smart billing and invoice management application built with React, TypeScript, and Supabase.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/fc7d0e71-cddd-4d92-a651-4950ef23e935
+- 📄 Create and manage bills/invoices
+- ⚡ Fast and responsive UI built with Vite + React
+- 🔐 Secure authentication with JWT and Supabase
+- 🗄️ Real-time database powered by Supabase
 
-## Run Locally
+## Tech Stack
 
-**Prerequisites:**  Node.js
+- **Frontend:** React, TypeScript, Vite
+- **Backend:** Node.js, Express
+- **Database:** Supabase
+- **Auth:** JWT
+- **Styling:** CSS
 
+## Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Prerequisites
+
+- Node.js (v18 or above)
+- A [Supabase](https://supabase.com) project
