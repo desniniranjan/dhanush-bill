@@ -23,6 +23,13 @@ import {
   History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = 'https://pktpvyllcuikbldcwjco.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrdHB2eWxsY3Vpa2JsZGN3amNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3MDk0NDMsImV4cCI6MjA5MDI4NTQ0M30.r_MxvaALqpCza6ryPwGhDHmTAU_dIV6cMDUhNWzgKTA';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const ADMIN_PASSWORD = 'Dhanush9559';
 
 interface BillingItem {
   id: string;
@@ -64,57 +71,26 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const token = localStorage.getItem('ssa_token');
-        if (!token) { setIsCheckingAuth(false); return; }
-        const res = await fetch('/api/check-auth', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (data.authenticated) {
-          setIsDashboardUnlocked(true);
-        } else {
-          localStorage.removeItem('ssa_token');
-        }
-      } catch (err) {
-        console.error('Auth check failed:', err);
-      } finally {
-        setIsCheckingAuth(false);
-      }
-    };
-    checkAuth();
+    // Check localStorage for existing session
+    const stored = localStorage.getItem('ssa_unlocked');
+    if (stored === 'true') setIsDashboardUnlocked(true);
+    setIsCheckingAuth(false);
   }, []);
 
-  const handleLogin = async () => {
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordInput })
-      });
-      const data = await res.json();
-      if (data.success && data.token) {
-        localStorage.setItem('ssa_token', data.token);
-        setIsDashboardUnlocked(true);
-        setPasswordError(false);
-      } else {
-        setPasswordError(true);
-      }
-    } catch (err) {
-      console.error('Login failed:', err);
+  const handleLogin = () => {
+    if (passwordInput === ADMIN_PASSWORD) {
+      localStorage.setItem('ssa_unlocked', 'true');
+      setIsDashboardUnlocked(true);
+      setPasswordError(false);
+    } else {
       setPasswordError(true);
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      localStorage.removeItem('ssa_token');
-      setIsDashboardUnlocked(false);
-      setPasswordInput('');
-    } catch (err) {
-      console.error('Logout failed:', err);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('ssa_unlocked');
+    setIsDashboardUnlocked(false);
+    setPasswordInput('');
   };
   
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -127,24 +103,12 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [invRes, histRes] = await Promise.all([
-        fetch('/api/inventory'),
-        fetch('/api/history')
+      const [{ data: invData }, { data: histData }] = await Promise.all([
+        supabase.from('inventory').select('*'),
+        supabase.from('history').select('*').order('date', { ascending: false })
       ]);
-      
-      if (invRes.ok) {
-        const invData = await invRes.json();
-        if (Array.isArray(invData)) {
-          setInventory(invData);
-        }
-      }
-      
-      if (histRes.ok) {
-        const histData = await histRes.json();
-        if (Array.isArray(histData)) {
-          setHistory(histData);
-        }
-      }
+      if (Array.isArray(invData)) setInventory(invData);
+      if (Array.isArray(histData)) setHistory(histData);
     } catch (err) {
       console.error('Failed to fetch data:', err);
     }
@@ -208,13 +172,9 @@ export default function App() {
 
   const saveInvoice = async (invoice: Invoice) => {
     try {
-      const res = await fetch('/api/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invoice)
-      });
-      const savedInvoice = await res.json();
-      setHistory(prev => [savedInvoice, ...prev]);
+      const { data, error } = await supabase.from('history').insert(invoice).select();
+      if (error) throw error;
+      setHistory(prev => [data[0], ...prev]);
       setItems([]);
       setCustomerName('');
       setPhoneNumber('');
@@ -237,15 +197,9 @@ export default function App() {
     };
 
     try {
-      const res = await fetch('/api/inventory', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ssa_token') || ''}`
-        },
-        body: JSON.stringify(itemToSave)
-      });
-      const savedItem = await res.json();
+      const { data, error } = await supabase.from('inventory').upsert(itemToSave).select();
+      if (error) throw error;
+      const savedItem = data[0];
 
       if (editingInventoryItem) {
         setInventory(prev => prev.map(item => 
@@ -260,7 +214,7 @@ export default function App() {
       setNewInvPrice('');
     } catch (err) {
       console.error('Failed to save inventory item:', err);
-      alert('Failed to save inventory item. Are you logged in?');
+      alert('Failed to save inventory item.');
     }
   };
 
@@ -278,38 +232,24 @@ export default function App() {
 
   const deleteInventoryItem = async (id: string) => {
     try {
-      const res = await fetch(`/api/inventory/${id}`, { 
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('ssa_token') || ''}` }
-      });
-      if (res.ok) {
-        setInventory(prev => prev.filter(item => item.id !== id));
-        if (editingInventoryItem?.id === id) {
-          cancelEditingInventory();
-        }
-      } else {
-        throw new Error('Failed to delete');
-      }
+      const { error } = await supabase.from('inventory').delete().eq('id', id);
+      if (error) throw error;
+      setInventory(prev => prev.filter(item => item.id !== id));
+      if (editingInventoryItem?.id === id) cancelEditingInventory();
     } catch (err) {
       console.error('Failed to delete inventory item:', err);
-      alert('Failed to delete inventory item. Are you logged in?');
+      alert('Failed to delete inventory item.');
     }
   };
 
   const deleteInvoice = async (id: string) => {
     try {
-      const res = await fetch(`/api/history/${id}`, { 
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('ssa_token') || ''}` }
-      });
-      if (res.ok) {
-        setHistory(prev => prev.filter(inv => inv.id !== id));
-      } else {
-        throw new Error('Failed to delete');
-      }
+      const { error } = await supabase.from('history').delete().eq('id', id);
+      if (error) throw error;
+      setHistory(prev => prev.filter(inv => inv.id !== id));
     } catch (err) {
       console.error('Failed to delete invoice:', err);
-      alert('Failed to delete invoice. Are you logged in?');
+      alert('Failed to delete invoice.');
     }
   };
 
