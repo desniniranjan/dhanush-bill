@@ -99,19 +99,23 @@ export default function App() {
   const [customerName, setCustomerName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [customers, setCustomers] = useState<{name: string; phoneNumber: string}[]>([]);
+  const [customerSearch, setCustomerSearch] = useState('');
 
   const fetchData = async () => {
-    try {
-      const [{ data: invData }, { data: histData }] = await Promise.all([
-        supabase.from('inventory').select('*'),
-        supabase.from('history').select('*').order('date', { ascending: false })
-      ]);
-      if (Array.isArray(invData)) setInventory(invData);
-      if (Array.isArray(histData)) setHistory(histData);
-    } catch (err) {
-      console.error('Failed to fetch data:', err);
-    }
-  };
+  try {
+    const [{ data: invData }, { data: histData }, { data: custData }] = await Promise.all([
+      supabase.from('inventory').select('*'),
+      supabase.from('history').select('*').order('date', { ascending: false }),
+      supabase.from('customers').select('name, phoneNumber').order('name')
+    ]);
+    if (Array.isArray(invData)) setInventory(invData);
+    if (Array.isArray(histData)) setHistory(histData);
+    if (Array.isArray(custData)) setCustomers(custData);
+  } catch (err) {
+    console.error('Failed to fetch data:', err);
+  }
+};
 
   useEffect(() => {
     fetchData();
@@ -170,20 +174,25 @@ export default function App() {
   };
 
   const saveInvoice = async (invoice: Invoice) => {
-    try {
-      const { data, error } = await supabase.from('history').insert(invoice).select();
-      if (error) throw error;
-      setHistory(prev => [data[0], ...prev]);
-      setItems([]);
-      setCustomerName('');
-      setPhoneNumber('');
-      setPreviewInvoice(null);
-      setActiveTab('dashboard');
-    } catch (err) {
-      console.error('Failed to save invoice:', err);
-      alert('Failed to save invoice to database.');
-    }
-  };
+  try {
+    const { data, error } = await supabase.from('history').insert(invoice).select();
+    if (error) throw error;
+
+    //  Save customer to customers table
+    await supabase.from('customers')
+      .upsert({ name: invoice.customerName, phoneNumber: invoice.phoneNumber }, { onConflict: 'phoneNumber' });
+
+    setHistory(prev => [data[0], ...prev]);
+    setItems([]);
+    setCustomerName('');
+    setPhoneNumber('');
+    setPreviewInvoice(null);
+    setActiveTab('dashboard');
+  } catch (err) {
+    console.error('Failed to save invoice:', err);
+    alert('Failed to save invoice to database.');
+  }
+};
 
   const handleAddInventory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -397,6 +406,46 @@ export default function App() {
                   <UserPlus className="w-5 h-5 text-secondary" />
                 </div>
                 <div className="space-y-6">
+                  {/* Customer Search */}
+                  <div className="relative">
+                    <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Search Existing Customer</label>
+                    <input
+                      className="w-full bg-transparent border-b-2 border-outline-variant focus:border-primary px-0 py-2 outline-none transition-colors placeholder:text-outline-variant/50"
+                      placeholder="Type name or phone..."
+                      type="text"
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                    />
+                    {customerSearch && (
+                      <div className="absolute z-10 top-full left-0 right-0 bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-xl mt-1 max-h-48 overflow-y-auto">
+                        {customers
+                          .filter(c =>
+                            c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                            c.phoneNumber.includes(customerSearch)
+                          )
+                          .map((c, i) => (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                setCustomerName(c.name);
+                                setPhoneNumber(c.phoneNumber);
+                                setCustomerSearch('');
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-surface-container-low transition-colors border-b border-outline-variant/10 last:border-0"
+                            >
+                              <p className="font-bold text-on-surface text-sm">{c.name}</p>
+                              <p className="text-xs text-on-surface-variant">{c.phoneNumber}</p>
+                            </button>
+                          ))}
+                        {customers.filter(c =>
+                          c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                          c.phoneNumber.includes(customerSearch)
+                        ).length === 0 && (
+                          <p className="px-4 py-3 text-sm text-on-surface-variant">No customers found</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="relative">
                     <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Full Name</label>
                     <input 
